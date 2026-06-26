@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
-import { createContext, useContext, useCallback, useEffect } from 'react';
+import { createContext, useContext, useCallback, useEffect, useRef } from 'react';
 import { useVocabulary } from '@/hooks/useVocabulary';
 import { useToast } from '@/hooks/useToast';
 import { useAuth, AuthProvider } from '@/hooks/useAuth';
@@ -23,6 +23,7 @@ import { AuthPage } from '@/pages/AuthPage';
 import { AdminPanel } from '@/pages/AdminPanel';
 import { UserDashboard } from '@/pages/UserDashboard';
 import { PreTest } from '@/pages/PreTest';
+
 interface AppContextType {
   vocabulary: ReturnType<typeof useVocabulary>;
   addToast: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => string;
@@ -44,39 +45,50 @@ function AppInner() {
   const gsheet = useGoogleSheet();
   const githubSync = useGithubUserSync();
 
-  // On login: merge shared Google Sheet words
-  const mergeShared = useCallback(() => {
-    const shared = gsheet.getSharedWords();
-    if (shared.length > 0) vocabulary.mergeSharedWords(shared);
-  }, [gsheet, vocabulary]);
+  // Track previous auth state to fire effects only on login transition
+  const prevAuthRef = useRef(false);
 
-  // On login: pull vocab from GitHub (cross-device sync)
-  const pullFromGithub = useCallback(async () => {
-    if (!currentUser) return;
-    const r = await githubSync.pullVocab(currentUser.id);
-    if (r.success && r.data) {
-      vocabulary.mergeSharedWords(r.data.words);
-    }
-  }, [currentUser, githubSync, vocabulary]);
-
+  // On login: merge shared Google Sheet words + pull vocab from GitHub
   useEffect(() => {
-    if (!isAuthenticated) return;
-    mergeShared();
-    pullFromGithub();
+    if (!isAuthenticated || !currentUser) return;
+    if (prevAuthRef.current) return; // already ran for this session
+    prevAuthRef.current = true;
+
+    // Merge Google Sheet shared words (cached in localStorage)
+    const shared = gsheet.getSharedWords();
+    if (shared.length > 0) {
+      vocabulary.mergeSharedWords(shared);
+    }
+
+    // Pull vocab from GitHub in background (cross-device sync)
+    githubSync.pullVocab(currentUser.id).then(r => {
+      if (r.success && r.data?.words && r.data.words.length > 0) {
+        vocabulary.mergeSharedWords(r.data.words);
+      }
+    }).catch(() => {/* silent — GitHub not configured yet */});
+
+  }, [isAuthenticated, currentUser?.id]); // eslint-disable-line
+
+  // Reset prevAuthRef when user logs out
+  useEffect(() => {
+    if (!isAuthenticated) prevAuthRef.current = false;
   }, [isAuthenticated]);
 
-  // Auto-sync listener (Google Sheet)
+  // Auto-sync listener (Google Sheet interval events)
   useEffect(() => {
-    const handler = () => { gsheet.syncNow(vocabulary.mergeSharedWords); };
+    const handler = () => {
+      gsheet.syncNow((words) => vocabulary.mergeSharedWords(words));
+    };
     window.addEventListener('moe-gsheet-autosync', handler);
     return () => window.removeEventListener('moe-gsheet-autosync', handler);
-  }, [gsheet, vocabulary]);
+  }, []); // eslint-disable-line
 
   // Auto-push vocab to GitHub when words change (debounced 10s)
+  // Only runs when authenticated and words are loaded
   useEffect(() => {
-    if (!currentUser || vocabulary.words.length === 0) return;
+    if (!currentUser || !isAuthenticated || vocabulary.words.length === 0) return;
     githubSync.schedulePush(currentUser.id, vocabulary.words, vocabulary.sessions);
-  }, [vocabulary.words, vocabulary.sessions]);
+  }, [vocabulary.words.length, currentUser?.id, isAuthenticated]); // eslint-disable-line
 
   if (isLoading) {
     return (
@@ -100,6 +112,7 @@ function AppInner() {
               <Route path="/"              element={<Dashboard />} />
               <Route path="/words"         element={<WordList />} />
               <Route path="/favorites"     element={<Favorites />} />
+              <Route path="/pretest"       element={<PreTest />} />
               <Route path="/study"         element={<StudyLayout />}>
                 <Route path="level"        element={<LevelJourney />} />
                 <Route path="flashcards"   element={<Flashcards />} />
@@ -110,7 +123,6 @@ function AppInner() {
               <Route path="/settings"      element={<Settings />} />
               <Route path="/profile"       element={<Profile />} />
               <Route path="/my-account"    element={<UserDashboard />} />
-              <Route path="/pretest"       element={<PreTest />} />
               {currentUser?.role === 'admin' && (
                 <Route path="/admin" element={<AdminPanel />} />
               )}
