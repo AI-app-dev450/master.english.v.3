@@ -16,6 +16,10 @@ export interface AuthUser {
   lastStudyDate?: string;
   // Per-user vocabulary data keys in storage
   dataKey: string;
+  pretestDone?: boolean;
+  pretestScore?: number;
+  pretestLevel?: string;
+  pretestDate?: string;
 }
 
 export interface AuthState {
@@ -49,4 +53,12 @@ export interface GithubConfig {
   token: string;
   repo: string; // "owner/repo"
   branch: string;
+}
+
+// Pre-test result stored on the user record
+export interface PretestResult {
+  score: number;          // 0–25
+  cefrLevel: string;      // level assigned by score
+  completedAt: string;    // ISO date
+  totalQuestions: number;
 }
