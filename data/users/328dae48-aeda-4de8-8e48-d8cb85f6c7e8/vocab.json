@@ -1,6 +1,6 @@
 {
   "userId": "328dae48-aeda-4de8-8e48-d8cb85f6c7e8",
-  "updatedAt": "2026-06-26T09:17:51.784Z",
+  "updatedAt": "2026-06-26T09:21:45.699Z",
   "words": [
     {
       "word": "Accomplish",
@@ -2315,10 +2315,11 @@
       "thaiTranslation": "เพื่อนบ้าน",
       "id": "b9e02432-c515-463b-99b2-c75b5e8ca8de",
       "dateAdded": "2026-06-25T14:19:46.076Z",
-      "studyCount": 0,
+      "studyCount": 1,
       "correctCount": 0,
       "isLearned": false,
-      "isStarred": false
+      "isStarred": false,
+      "lastStudied": "2026-06-26T09:19:21.781Z"
     },
     {
       "word": "Opposite",
@@ -2562,10 +2563,11 @@
       "thaiTranslation": "ทำให้อย่างดีที่สุด / พยายามสุดความสามารถ",
       "id": "e080284f-886b-494e-933d-80abe35870d9",
       "dateAdded": "2026-06-25T14:19:46.076Z",
-      "studyCount": 0,
-      "correctCount": 0,
-      "isLearned": false,
-      "isStarred": false
+      "studyCount": 1,
+      "correctCount": 1,
+      "isLearned": true,
+      "isStarred": true,
+      "lastStudied": "2026-06-26T09:19:36.485Z"
     },
     {
       "word": "Make a mistake",
@@ -2581,10 +2583,11 @@
       "thaiTranslation": "ทำผิดพลาด",
       "id": "283d253f-1461-4e3e-8afe-c60e20ee5606",
       "dateAdded": "2026-06-25T14:19:46.076Z",
-      "studyCount": 0,
-      "correctCount": 0,
-      "isLearned": false,
-      "isStarred": false
+      "studyCount": 1,
+      "correctCount": 1,
+      "isLearned": true,
+      "isStarred": false,
+      "lastStudied": "2026-06-26T09:20:26.113Z"
     },
     {
       "word": "Take a break",
@@ -2619,10 +2622,11 @@
       "thaiTranslation": "เป็นหวัด / ติดหวัด",
       "id": "84bf9ad0-c8e8-4f2e-a25a-21475595d0f8",
       "dateAdded": "2026-06-25T14:19:46.076Z",
-      "studyCount": 0,
-      "correctCount": 0,
-      "isLearned": false,
-      "isStarred": false
+      "studyCount": 1,
+      "correctCount": 1,
+      "isLearned": true,
+      "isStarred": true,
+      "lastStudied": "2026-06-26T09:21:00.649Z"
     },
     {
       "word": "Keep a secret",
@@ -3512,10 +3516,11 @@
       "thaiTranslation": "ตื่นนอน (tuen-non)",
       "id": "ae64f4c2-8e1f-409c-9ba6-59b7255e1705",
       "dateAdded": "2026-06-25T14:19:46.076Z",
-      "studyCount": 0,
-      "correctCount": 0,
-      "isLearned": false,
-      "isStarred": false
+      "studyCount": 1,
+      "correctCount": 1,
+      "isLearned": true,
+      "isStarred": false,
+      "lastStudied": "2026-06-26T09:20:24.628Z"
     },
     {
       "word": "Get up",
@@ -3702,10 +3707,11 @@
       "thaiTranslation": "ถ่ายรูป (thai-rup)",
       "id": "7364ef9f-c0f3-4214-a25d-1968b9caca81",
       "dateAdded": "2026-06-25T14:19:46.076Z",
-      "studyCount": 0,
-      "correctCount": 0,
-      "isLearned": false,
-      "isStarred": false
+      "studyCount": 1,
+      "correctCount": 1,
+      "isLearned": true,
+      "isStarred": false,
+      "lastStudied": "2026-06-26T09:20:25.407Z"
     },
     {
       "word": "Have breakfast",
@@ -4899,10 +4905,11 @@
       "thaiTranslation": "ตามหา / ค้นหา (tam-ha)",
       "id": "445e181e-9c4b-4d01-b0f3-7009178f07af",
       "dateAdded": "2026-06-25T14:19:46.076Z",
-      "studyCount": 0,
-      "correctCount": 0,
-      "isLearned": false,
-      "isStarred": false
+      "studyCount": 1,
+      "correctCount": 1,
+      "isLearned": true,
+      "isStarred": false,
+      "lastStudied": "2026-06-26T09:20:19.745Z"
     },
     {
       "word": "Turn off",
@@ -4959,7 +4966,7 @@
       "studyCount": 0,
       "correctCount": 0,
       "isLearned": false,
-      "isStarred": false
+      "isStarred": true
     },
     {
       "word": "Try on",
@@ -9156,15 +9163,16 @@
       "difficulty": "medium",
       "id": "gs_1782465423047_7l4qi",
       "dateAdded": "2026-06-26T09:17:03.047Z",
-      "studyCount": 0,
-      "correctCount": 0,
-      "isStarred": false,
-      "isLearned": false,
+      "studyCount": 1,
+      "correctCount": 1,
+      "isStarred": true,
+      "isLearned": true,
       "synonym": "Trust, think, accept",
       "antonym": "Doubt, deny",
       "category": "Mind",
       "laoTranslation": "ເຊື່ອ (xeua)",
-      "thaiTranslation": "เชื่อ (chuea)"
+      "thaiTranslation": "เชื่อ (chuea)",
+      "lastStudied": "2026-06-26T09:19:00.450Z"
     },
     {
       "word": "Customer",
@@ -9232,15 +9240,16 @@
       "difficulty": "medium",
       "id": "gs_1782465423047_s9uvv",
       "dateAdded": "2026-06-26T09:17:03.047Z",
-      "studyCount": 0,
-      "correctCount": 0,
+      "studyCount": 1,
+      "correctCount": 1,
       "isStarred": false,
-      "isLearned": false,
+      "isLearned": true,
       "synonym": "Destiny, tomorrow",
       "antonym": "Past",
       "category": "Time",
       "laoTranslation": "ອະນາຄົດ (a-na-khot)",
-      "thaiTranslation": "อนาคต (a-na-khot)"
+      "thaiTranslation": "อนาคต (a-na-khot)",
+      "lastStudied": "2026-06-26T09:20:00.514Z"
     },
     {
       "word": "Government",
@@ -9270,15 +9279,16 @@
       "difficulty": "medium",
       "id": "gs_1782465423047_bop5p",
       "dateAdded": "2026-06-26T09:17:03.047Z",
-      "studyCount": 0,
-      "correctCount": 0,
+      "studyCount": 1,
+      "correctCount": 1,
       "isStarred": false,
-      "isLearned": false,
+      "isLearned": true,
       "synonym": "Chronicle, past",
       "antonym": "Future",
       "category": "Knowledge",
       "laoTranslation": "ປະຫວັດສາດ (pa-wat-sat)",
-      "thaiTranslation": "ประวัติศาสตร์ (pra-wat-ti-sat)"
+      "thaiTranslation": "ประวัติศาสตร์ (pra-wat-ti-sat)",
+      "lastStudied": "2026-06-26T09:20:26.746Z"
     },
     {
       "word": "Intelligent",
@@ -9403,15 +9413,16 @@
       "difficulty": "medium",
       "id": "gs_1782465423047_6k5tp",
       "dateAdded": "2026-06-26T09:17:03.047Z",
-      "studyCount": 0,
-      "correctCount": 0,
+      "studyCount": 1,
+      "correctCount": 1,
       "isStarred": false,
-      "isLearned": false,
+      "isLearned": true,
       "synonym": "Knowledge, discipline",
       "antonym": "None",
       "category": "Knowledge",
       "laoTranslation": "ວິທະຍາສາດ (wi-tha-nya-sat)",
-      "thaiTranslation": "วิทยาศาสตร์ (wit-tha-ya-sat)"
+      "thaiTranslation": "วิทยาศาสตร์ (wit-tha-ya-sat)",
+      "lastStudied": "2026-06-26T09:20:23.614Z"
     },
     {
       "word": "Analyze",
