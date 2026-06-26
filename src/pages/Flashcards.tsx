@@ -2,90 +2,160 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Volume2, ArrowLeft, ArrowRight, Star, Bookmark,
-  Tag, BarChart2, RefreshCw,
+  Tag, BarChart2, RefreshCw, Lock,
 } from 'lucide-react';
 import { useApp } from '@/App';
 import { useNavigate } from 'react-router-dom';
 import { useSpeech } from '@/hooks/useSpeech';
 import type { VocabularyWord, CEFRLevel } from '@/types/vocabulary';
 
-// ── Reuse the same visual tokens as WordCard ───────────────────────────────────
+// ── Visual tokens (same as WordCard) ──────────────────────────────────────────
 const POS_COLORS: Record<string, string> = {
-  noun:         'bg-blue-50   text-blue-700',
-  verb:         'bg-green-50  text-green-700',
-  adjective:    'bg-purple-50 text-purple-700',
-  adverb:       'bg-orange-50 text-orange-700',
-  pronoun:      'bg-pink-50   text-pink-700',
-  preposition:  'bg-gray-50   text-gray-700',
-  conjunction:  'bg-teal-50   text-teal-700',
-  interjection: 'bg-red-50    text-red-700',
-  phrase:       'bg-indigo-50 text-indigo-700',
+  noun:'bg-blue-50 text-blue-700', verb:'bg-green-50 text-green-700',
+  adjective:'bg-purple-50 text-purple-700', adverb:'bg-orange-50 text-orange-700',
+  pronoun:'bg-pink-50 text-pink-700', preposition:'bg-gray-50 text-gray-700',
+  conjunction:'bg-teal-50 text-teal-700', interjection:'bg-red-50 text-red-700',
+  phrase:'bg-indigo-50 text-indigo-700',
 };
-
 const CEFR_STYLE: Record<string, { bg: string; label: string }> = {
-  A1: { bg: 'bg-emerald-100 text-emerald-700', label: 'A1 · Beginner'     },
-  A2: { bg: 'bg-green-100   text-green-700',   label: 'A2 · Elementary'   },
-  B1: { bg: 'bg-yellow-100  text-yellow-700',  label: 'B1 · Intermediate' },
-  B2: { bg: 'bg-orange-100  text-orange-700',  label: 'B2 · Upper-Int.'   },
-  C1: { bg: 'bg-red-100     text-red-700',     label: 'C1 · Advanced'     },
-  C2: { bg: 'bg-purple-100  text-purple-700',  label: 'C2 · Mastery'      },
+  A1:{ bg:'bg-emerald-100 text-emerald-700', label:'A1 · Beginner'     },
+  A2:{ bg:'bg-green-100   text-green-700',   label:'A2 · Elementary'   },
+  B1:{ bg:'bg-yellow-100  text-yellow-700',  label:'B1 · Intermediate' },
+  B2:{ bg:'bg-orange-100  text-orange-700',  label:'B2 · Upper-Int.'   },
+  C1:{ bg:'bg-red-100     text-red-700',     label:'C1 · Advanced'     },
+  C2:{ bg:'bg-purple-100  text-purple-700',  label:'C2 · Mastery'      },
 };
-
-const DIFF_STYLE: Record<string, { color: string; dots: number; label: string }> = {
-  easy:   { color: 'text-emerald-600', dots: 1, label: 'Easy'   },
-  medium: { color: 'text-amber-500',   dots: 2, label: 'Medium' },
-  hard:   { color: 'text-red-500',     dots: 3, label: 'Hard'   },
+const DIFF_STYLE: Record<string,{color:string;dots:number;label:string}> = {
+  easy:{color:'text-emerald-600',dots:1,label:'Easy'},
+  medium:{color:'text-amber-500',dots:2,label:'Medium'},
+  hard:{color:'text-red-500',dots:3,label:'Hard'},
 };
-
-function DifficultyDots({ level }: { level: string }) {
+function DiffDots({ level }: { level: string }) {
   const s = DIFF_STYLE[level] ?? DIFF_STYLE.medium;
   return (
     <span className={`flex items-center gap-0.5 text-[11px] font-semibold ${s.color}`}>
-      {[1, 2, 3].map(n => (
-        <span key={n} className={`inline-block h-1.5 w-1.5 rounded-full ${n <= s.dots ? 'bg-current' : 'bg-current opacity-20'}`} />
-      ))}
+      {[1,2,3].map(n=><span key={n} className={`inline-block h-1.5 w-1.5 rounded-full ${n<=s.dots?'bg-current':'bg-current opacity-20'}`}/>)}
       <span className="ml-1">{s.label}</span>
     </span>
   );
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// ── Level mastery helpers ──────────────────────────────────────────────────────
+const CEFR_ORDER: CEFRLevel[] = ['A1','A2','B1','B2','C1','C2'];
+const UNLOCK_PCT = 80;  // % mastery needed to unlock next level
+
+function getMasteryPct(words: VocabularyWord[], level: CEFRLevel): number {
+  const wds = words.filter(w => w.cefrLevel === level);
+  if (wds.length === 0) return 0;
+  return Math.round((wds.filter(w => w.isLearned).length / wds.length) * 100);
+}
+
+function isLevelUnlocked(
+  words: VocabularyWord[],
+  level: CEFRLevel,
+  pretestLevel?: string
+): boolean {
+  const idx = CEFR_ORDER.indexOf(level);
+  if (idx === 0) return true; // A1 always unlocked
+  // If user passed pretest at this level or higher → unlocked
+  if (pretestLevel) {
+    const pretestIdx = CEFR_ORDER.indexOf(pretestLevel as CEFRLevel);
+    if (idx <= pretestIdx) return true;
+  }
+  // Otherwise need to pass previous level at UNLOCK_PCT
+  const prevLevel = CEFR_ORDER[idx - 1];
+  return getMasteryPct(words, prevLevel) >= UNLOCK_PCT;
+}
+
+// ── Star button — ALWAYS reads live state ─────────────────────────────────────
+function StarButton({ wordId, className = '' }: { wordId: string; className?: string }) {
+  const { vocabulary, addToast } = useApp();
+  // Always read live isStarred from vocabulary.words — never from stale snapshot
+  const live = vocabulary.words.find(w => w.id === wordId);
+  const isStarred = live?.isStarred ?? false;
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    vocabulary.toggleStar(wordId);
+    addToast(isStarred ? 'Removed from Favorites' : '⭐ Added to Favorites', 'success');
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      className={`rounded-lg p-1.5 transition-all hover:scale-110 active:scale-95 hover:bg-muted/50 ${className}`}
+      title={isStarred ? 'Remove from Favorites (S)' : 'Add to Favorites (S)'}
+    >
+      <Star
+        className={`h-5 w-5 transition-all ${isStarred ? 'fill-[#F5A623] text-[#F5A623] drop-shadow-sm' : 'text-muted-foreground'}`}
+        strokeWidth={1.5}
+      />
+    </button>
+  );
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────────
 export function Flashcards() {
   const { vocabulary, addToast } = useApp();
   const { speak } = useSpeech();
   const navigate = useNavigate();
+
+  // Read the current user's pretest level from localStorage (via auth session)
+  const pretestLevel: string | undefined = (() => {
+    try {
+      const sess = localStorage.getItem('lexicon_auth_session');
+      if (!sess) return undefined;
+      const { userId } = JSON.parse(sess);
+      const users = JSON.parse(localStorage.getItem('lexicon_auth_users') || '[]');
+      const u = users.find((x: any) => x.id === userId);
+      return u?.pretestLevel;
+    } catch { return undefined; }
+  })();
+
+  // Session filter set by Favorites / LevelJourney pages
+  const ssFilter = sessionStorage.getItem('moe_study_filter');
+  const ssLevel  = sessionStorage.getItem('moe_study_level') as CEFRLevel | null;
 
   const [selectedLevel, setSelectedLevel] = useState<CEFRLevel | 'all'>('all');
   const [currentIndex, setCurrentIndex]   = useState(0);
   const [isFlipped, setIsFlipped]         = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [sessionStats, setSessionStats]   = useState({ mastered: 0, review: 0 });
-  const [shuffledWords, setShuffledWords] = useState<VocabularyWord[]>([]);
+  const [queue, setQueue]                 = useState<VocabularyWord[]>([]);
   const [showSetup, setShowSetup]         = useState(true);
-  const [direction, setDirection]         = useState<'left' | 'right' | null>(null);
+  const [direction, setDirection]         = useState<'left'|'right'|null>(null);
 
-  // Level-journey & favorites session filter (set by LevelJourney / Favorites page)
-  const _ssFilter = sessionStorage.getItem('moe_study_filter');
-  const _ssLevel  = sessionStorage.getItem('moe_study_level') as CEFRLevel | null;
-  const levelWords = _ssFilter === 'favorites'
-    ? vocabulary.words.filter(w => w.isStarred)
-    : _ssFilter === 'level' && _ssLevel
-    ? vocabulary.words.filter(w => w.cefrLevel === _ssLevel)
-    : selectedLevel === 'all'
-    ? vocabulary.words
-    : vocabulary.words.filter(w => w.cefrLevel === selectedLevel);
+  // Words for the current level selection (respects session filter)
+  const levelWords: VocabularyWord[] = (() => {
+    if (ssFilter) {
+      try {
+        const f = JSON.parse(ssFilter);
+        if (f.source === 'favorites') return vocabulary.words.filter(w => w.isStarred);
+        if (f.ids) return vocabulary.words.filter(w => f.ids.includes(w.id));
+      } catch {}
+    }
+    if (ssLevel) return vocabulary.words.filter(w => w.cefrLevel === ssLevel);
+    if (selectedLevel === 'all') return vocabulary.words;
+    return vocabulary.words.filter(w => w.cefrLevel === selectedLevel);
+  })();
 
   const startSession = () => {
     const filtered = levelWords.filter(w => !w.isLearned);
     if (filtered.length === 0) { addToast('No words to study! All words are learned.', 'info'); return; }
+    // Sort by level order (A1 first), then alphabetically — NO random shuffle by default
+    const sorted = [...filtered].sort((a, b) => {
+      const li = CEFR_ORDER.indexOf(a.cefrLevel) - CEFR_ORDER.indexOf(b.cefrLevel);
+      if (li !== 0) return li;
+      return a.word.localeCompare(b.word);
+    });
     const list = vocabulary.settings.shuffleCards
-      ? [...filtered].sort(() => Math.random() - 0.5)
-      : [...filtered];
-    setShuffledWords(list);
+      ? [...sorted].sort(() => Math.random() - 0.5)
+      : sorted;
+    setQueue(list);
     setCurrentIndex(0);
     setIsFlipped(false);
     setSessionComplete(false);
-    setSessionStats({ mastered: 0, review: 0 });
+    setSessionStats({ mastered:0, review:0 });
     setDirection(null);
     setShowSetup(false);
   };
@@ -93,96 +163,112 @@ export function Flashcards() {
   const handleFlip = useCallback(() => setIsFlipped(p => !p), []);
 
   const handleNext = useCallback((learned: boolean) => {
-    const word = shuffledWords[currentIndex];
+    const w = queue[currentIndex];
     setDirection(learned ? 'right' : 'left');
-
-    if (learned) {
-      vocabulary.updateWord(word.id, {
-        isLearned: true,
-        studyCount: word.studyCount + 1,
-        correctCount: word.correctCount + 1,
-        lastStudied: new Date().toISOString(),
-      });
-      setSessionStats(p => ({ ...p, mastered: p.mastered + 1 }));
-    } else {
-      vocabulary.updateWord(word.id, {
-        studyCount: word.studyCount + 1,
-        lastStudied: new Date().toISOString(),
-      });
-      setSessionStats(p => ({ ...p, review: p.review + 1 }));
-    }
-
-    if (currentIndex < shuffledWords.length - 1) {
+    vocabulary.updateWord(w.id, {
+      isLearned:    learned ? true : w.isLearned,
+      studyCount:   w.studyCount + 1,
+      correctCount: w.correctCount + (learned ? 1 : 0),
+      lastStudied:  new Date().toISOString(),
+    });
+    setSessionStats(p => learned
+      ? { ...p, mastered: p.mastered + 1 }
+      : { ...p, review: p.review + 1 }
+    );
+    if (currentIndex < queue.length - 1) {
       setIsFlipped(false);
       setTimeout(() => { setCurrentIndex(p => p + 1); setDirection(null); }, 220);
     } else {
       setSessionComplete(true);
     }
-  }, [shuffledWords, currentIndex, vocabulary]);
+  }, [queue, currentIndex, vocabulary]);
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
+    const h = (e: KeyboardEvent) => {
       if (showSetup || sessionComplete) return;
       if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); handleFlip(); }
       else if (e.code === 'ArrowLeft')  handleNext(false);
       else if (e.code === 'ArrowRight') handleNext(true);
       else if (e.code === 'KeyS') {
-        const w = shuffledWords[currentIndex];
+        const w = queue[currentIndex];
         if (w) {
-          const live = vocabulary.words.find(x => x.id === w.id) ?? w;
           vocabulary.toggleStar(w.id);
-          addToast(!live.isStarred ? '⭐ Added to Favorites' : 'Removed from Favorites', 'success');
+          const live = vocabulary.words.find(x => x.id === w.id);
+          addToast(!live?.isStarred ? '⭐ Added to Favorites' : 'Removed from Favorites', 'success');
         }
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [showSetup, sessionComplete, handleFlip, handleNext, shuffledWords, currentIndex, vocabulary]);
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [showSetup, sessionComplete, handleFlip, handleNext, queue, currentIndex, vocabulary, addToast]);
 
-  // ── Setup screen ─────────────────────────────────────────────────────────────
+  // ── Setup ────────────────────────────────────────────────────────────────────
   if (showSetup) {
     return (
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col items-center justify-center py-12">
+      <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }}
+        className="flex flex-col items-center justify-center py-10">
         <div className="w-full max-w-md space-y-6">
           <div className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#FFF3DD]">
-              <Bookmark className="h-8 w-8 text-[#F5A623]" strokeWidth={1.5} />
+              <Bookmark className="h-8 w-8 text-[#F5A623]" strokeWidth={1.5}/>
             </div>
             <h2 className="text-xl font-semibold text-foreground">Flashcards</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {levelWords.filter(w => !w.isLearned).length} words ready to study
+              {levelWords.filter(w => !w.isLearned).length} words ready · sorted A1 → C2
             </p>
           </div>
+
           <div>
             <label className="mb-2 block text-sm font-medium text-foreground">Select Level</label>
             <div className="grid grid-cols-4 gap-2">
-              {(['all', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const).map(level => (
-                <button key={level} onClick={() => setSelectedLevel(level)}
-                  className={`rounded-xl py-2.5 text-sm font-semibold transition-colors ${
-                    selectedLevel === level
-                      ? 'bg-[#F5A623] text-white shadow-sm'
-                      : 'bg-card border border-border text-muted-foreground hover:bg-muted/50'
-                  }`}>
-                  {level === 'all' ? 'All' : level}
-                </button>
-              ))}
+              {(['all','A1','A2','B1','B2','C1','C2'] as const).map(level => {
+                const locked = level !== 'all' && !isLevelUnlocked(vocabulary.words, level as CEFRLevel, pretestLevel);
+                const mastery = level !== 'all' ? getMasteryPct(vocabulary.words, level as CEFRLevel) : null;
+                return (
+                  <button key={level} onClick={() => !locked && setSelectedLevel(level)}
+                    disabled={locked}
+                    className={`relative rounded-xl py-2.5 text-sm font-semibold transition-colors ${
+                      selectedLevel === level
+                        ? 'bg-[#F5A623] text-white shadow-sm'
+                        : locked
+                        ? 'bg-muted/30 text-muted-foreground/40 cursor-not-allowed'
+                        : 'bg-card border border-border text-muted-foreground hover:bg-muted/50'
+                    }`}>
+                    {locked && <Lock className="absolute top-1.5 right-1.5 h-2.5 w-2.5 text-muted-foreground/40"/>}
+                    <div>{level === 'all' ? 'All' : level}</div>
+                    {mastery !== null && !locked && mastery > 0 && (
+                      <div className={`text-[9px] mt-0.5 ${selectedLevel === level ? 'text-white/80' : 'text-muted-foreground'}`}>
+                        {mastery}%
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              🔒 Levels unlock when previous level reaches {UNLOCK_PCT}% mastery
+            </p>
           </div>
+
           <button onClick={startSession}
             className="w-full rounded-[10px] bg-[#F5A623] py-3 text-sm font-semibold text-white hover:bg-[#E09400] transition-colors">
             Start Session
+          </button>
+
+          <button onClick={() => navigate('/study/level')}
+            className="w-full rounded-[10px] border border-border bg-card py-2.5 text-sm text-muted-foreground hover:bg-muted/50 transition-colors">
+            Go to Level Journey →
           </button>
         </div>
       </motion.div>
     );
   }
 
-  // ── Complete screen ───────────────────────────────────────────────────────────
+  // ── Complete ──────────────────────────────────────────────────────────────────
   if (sessionComplete) {
     return (
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+      <motion.div initial={{ opacity:0, scale:0.95 }} animate={{ opacity:1, scale:1 }}
         className="flex flex-col items-center justify-center py-16">
         <div className="text-center space-y-6 max-w-sm w-full">
           <div className="text-5xl">🎉</div>
@@ -194,7 +280,7 @@ export function Flashcards() {
             </div>
             <div className="text-center">
               <div className="text-4xl font-bold text-[#F5A623]">{sessionStats.review}</div>
-              <div className="text-sm text-muted-foreground mt-1">Need Review</div>
+              <div className="text-sm text-muted-foreground mt-1">Still Learning</div>
             </div>
           </div>
           <div className="flex gap-3 justify-center">
@@ -204,7 +290,7 @@ export function Flashcards() {
             </button>
             <button onClick={startSession}
               className="flex items-center gap-2 rounded-[10px] bg-[#F5A623] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#E09400] transition-colors">
-              <RefreshCw className="h-4 w-4" strokeWidth={1.5} /> Study Again
+              <RefreshCw className="h-4 w-4" strokeWidth={1.5}/> Study Again
             </button>
           </div>
         </div>
@@ -212,77 +298,61 @@ export function Flashcards() {
     );
   }
 
-  // ── Study screen ──────────────────────────────────────────────────────────────
-  // Live word = merge shuffled word with current vocabulary state (so star/learned stays fresh)
-  const _staleWord = shuffledWords[currentIndex];
-  const _liveWord  = vocabulary.words.find(w => w.id === _staleWord?.id);
-  const word = _liveWord ?? _staleWord;
-  const progress = ((currentIndex + 1) / shuffledWords.length) * 100;
-  const cefrStyle = CEFR_STYLE[word.cefrLevel] ?? { bg: 'bg-gray-100 text-gray-600', label: word.cefrLevel };
+  // ── Study card ────────────────────────────────────────────────────────────────
+  // CRITICAL: always read the LIVE word from vocabulary.words so star/learned stays current
+  const staleWord  = queue[currentIndex];
+  const word       = vocabulary.words.find(w => w.id === staleWord?.id) ?? staleWord;
+  if (!word) return null;
+
+  const progress   = ((currentIndex + 1) / queue.length) * 100;
+  const cefrStyle  = CEFR_STYLE[word.cefrLevel] ?? { bg:'bg-gray-100 text-gray-600', label:word.cefrLevel };
 
   return (
     <div className="space-y-5">
-
       {/* Progress */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Card {currentIndex + 1} of {shuffledWords.length}</span>
+          <span className="text-muted-foreground">Card {currentIndex + 1} of {queue.length}</span>
           <span className="text-muted-foreground">{Math.round(progress)}%</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-border">
           <motion.div className="h-full rounded-full bg-[#F5A623]"
-            initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }} />
+            initial={{ width:0 }} animate={{ width:`${progress}%` }} transition={{ duration:0.3 }}/>
         </div>
       </div>
 
       {/* Card */}
       <AnimatePresence mode="wait">
         <motion.div
-          key={`${word.id}-${isFlipped ? 'back' : 'front'}`}
-          initial={{ opacity: 0, x: direction === 'right' ? 40 : direction === 'left' ? -40 : 0, rotateY: isFlipped ? -8 : 8 }}
-          animate={{ opacity: 1, x: 0, rotateY: 0 }}
-          exit={{ opacity: 0, scale: 0.96 }}
-          transition={{ duration: 0.2 }}
+          key={`${word.id}-${isFlipped?'back':'front'}`}
+          initial={{ opacity:0, x: direction==='right'?40:direction==='left'?-40:0 }}
+          animate={{ opacity:1, x:0 }}
+          exit={{ opacity:0, scale:0.96 }}
+          transition={{ duration:0.2 }}
           className="w-full cursor-pointer"
           onClick={handleFlip}
         >
           {!isFlipped ? (
             /* ── FRONT ── */
             <div className="rounded-2xl border border-border bg-card shadow-sm min-h-[220px] flex flex-col items-center justify-center p-8 relative">
-              {/* Star top-right */}
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  vocabulary.toggleStar(word.id);
-                  const nowStarred = !word.isStarred;
-                  addToast(nowStarred ? '⭐ Added to Favorites' : 'Removed from Favorites', 'success');
-                }}
-                className="absolute top-4 right-4 rounded-lg p-1.5 transition-all hover:bg-muted/50 hover:scale-110 active:scale-95"
-                title={word.isStarred ? 'Remove from Favorites (S)' : 'Add to Favorites (S)'}
-              >
-                <Star className={`h-5 w-5 transition-all ${word.isStarred ? 'fill-[#F5A623] text-[#F5A623] drop-shadow-sm' : 'text-muted-foreground'}`} strokeWidth={1.5} />
-              </button>
+              {/* Star — uses StarButton which always reads live state */}
+              <div className="absolute top-4 right-4">
+                <StarButton wordId={word.id} />
+              </div>
 
               <h3 className="text-4xl font-bold text-foreground text-center mb-4">{word.word}</h3>
-
-              {/* POS badge */}
               <span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${POS_COLORS[word.partOfSpeech] ?? 'bg-gray-50 text-gray-700'}`}>
                 {word.partOfSpeech}
               </span>
-
-              {/* CEFR + difficulty row */}
               <div className="flex items-center gap-3 mt-3 flex-wrap justify-center">
-                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${cefrStyle.bg}`}>
-                  {cefrStyle.label}
-                </span>
-                {word.difficulty && <DifficultyDots level={word.difficulty} />}
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${cefrStyle.bg}`}>{cefrStyle.label}</span>
+                {word.difficulty && <DiffDots level={word.difficulty}/>}
                 {word.category && (
                   <span className="flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                    <Tag className="h-2.5 w-2.5" />{word.category}
+                    <Tag className="h-2.5 w-2.5"/>{word.category}
                   </span>
                 )}
               </div>
-
               {vocabulary.settings.showHints && (
                 <p className="absolute bottom-4 text-xs text-muted-foreground/60">Tap to reveal · S to star</p>
               )}
@@ -290,8 +360,6 @@ export function Flashcards() {
           ) : (
             /* ── BACK ── */
             <div className="rounded-2xl border border-border bg-card shadow-sm p-5 space-y-3">
-
-              {/* Word + audio + star */}
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-xl font-bold text-foreground">{word.word}</h3>
@@ -301,94 +369,60 @@ export function Flashcards() {
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={e => { e.stopPropagation(); speak(word.word); }}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted/50 transition-colors" title="Pronounce">
-                    <Volume2 className="h-4 w-4" strokeWidth={1.5} />
+                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted/50 transition-colors">
+                    <Volume2 className="h-4 w-4" strokeWidth={1.5}/>
                   </button>
-                  <button onClick={e => {
-                      e.stopPropagation();
-                      vocabulary.toggleStar(word.id);
-                      const nowStarred = !word.isStarred;
-                      addToast(nowStarred ? '⭐ Added to Favorites' : 'Removed from Favorites', 'success');
-                    }}
-                    className="rounded-lg p-1.5 transition-all hover:bg-muted/50 hover:scale-110 active:scale-95"
-                    title={word.isStarred ? 'Remove from Favorites (S)' : 'Add to Favorites (S)'}>
-                    <Star className={`h-4 w-4 transition-all ${word.isStarred ? 'fill-[#F5A623] text-[#F5A623] drop-shadow-sm' : 'text-muted-foreground'}`} strokeWidth={1.5} />
-                  </button>
+                  <StarButton wordId={word.id} />
                 </div>
               </div>
 
-              {/* Badges row */}
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${cefrStyle.bg}`}>
-                  {cefrStyle.label}
-                </span>
-                {word.difficulty && <DifficultyDots level={word.difficulty} />}
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${cefrStyle.bg}`}>{cefrStyle.label}</span>
+                {word.difficulty && <DiffDots level={word.difficulty}/>}
                 {word.category && (
                   <span className="flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                    <Tag className="h-2.5 w-2.5" />{word.category}
+                    <Tag className="h-2.5 w-2.5"/>{word.category}
                   </span>
                 )}
-                {word.isLearned && (
-                  <span className="rounded-full bg-[#ECFDF5] px-2.5 py-0.5 text-[11px] font-semibold text-[#16A34A]">✓ Learned</span>
-                )}
+                {word.isLearned && <span className="rounded-full bg-[#ECFDF5] px-2.5 py-0.5 text-[11px] font-semibold text-[#16A34A]">✓ Learned</span>}
               </div>
 
-              {/* Definition */}
               <p className="text-sm font-medium text-foreground leading-relaxed">{word.definition}</p>
 
-              {/* Translations */}
               {vocabulary.settings.showTranslations && (word.laoTranslation || word.thaiTranslation) && (
                 <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                   {word.laoTranslation  && <span>🇱🇦 {word.laoTranslation}</span>}
                   {word.thaiTranslation && <span>🇹🇭 {word.thaiTranslation}</span>}
                 </div>
               )}
-
-              {/* Example */}
               {word.exampleSentence && (
-                <p className="text-[13px] italic text-muted-foreground leading-relaxed">
-                  &ldquo;{word.exampleSentence}&rdquo;
-                </p>
+                <p className="text-[13px] italic text-muted-foreground leading-relaxed">&ldquo;{word.exampleSentence}&rdquo;</p>
               )}
-
-              {/* Synonyms / Antonyms */}
               {(word.synonym || word.antonym) && (
                 <div className="flex flex-wrap gap-2">
                   {word.synonym && (
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className="text-[11px] text-muted-foreground">Syn:</span>
-                      {word.synonym.split(',').map((s, i) => (
-                        <span key={i} className="rounded-full bg-[#FFF3DD] px-2 py-0.5 text-[11px] font-medium text-[#B37600]">{s.trim()}</span>
-                      ))}
+                      {word.synonym.split(',').map((s,i) => <span key={i} className="rounded-full bg-[#FFF3DD] px-2 py-0.5 text-[11px] font-medium text-[#B37600]">{s.trim()}</span>)}
                     </div>
                   )}
                   {word.antonym && (
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className="text-[11px] text-muted-foreground">Ant:</span>
-                      {word.antonym.split(',').map((a, i) => (
-                        <span key={i} className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600">{a.trim()}</span>
-                      ))}
+                      {word.antonym.split(',').map((a,i) => <span key={i} className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600">{a.trim()}</span>)}
                     </div>
                   )}
                 </div>
               )}
-
-              {/* Study progress */}
               {word.studyCount > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <BarChart2 className="h-3 w-3" /> Progress
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {word.correctCount}/{word.studyCount} correct
-                    </span>
+                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><BarChart2 className="h-3 w-3"/>Progress</span>
+                    <span className="text-[11px] text-muted-foreground">{word.correctCount}/{word.studyCount} correct</span>
                   </div>
                   <div className="h-1 rounded-full bg-border overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-[#34C759] transition-all"
-                      style={{ width: `${Math.round((word.correctCount / word.studyCount) * 100)}%` }}
-                    />
+                    <div className="h-full rounded-full bg-[#34C759] transition-all"
+                      style={{ width:`${Math.round((word.correctCount/word.studyCount)*100)}%` }}/>
                   </div>
                 </div>
               )}
@@ -401,14 +435,13 @@ export function Flashcards() {
       <div className="flex justify-center gap-3">
         <button onClick={() => handleNext(false)}
           className="flex items-center gap-2 rounded-xl border-2 border-[#F5A623] bg-card px-6 py-3 text-sm font-semibold text-[#F5A623] hover:bg-[#FFF3DD] transition-colors">
-          <ArrowLeft className="h-4 w-4" strokeWidth={1.5} /> Still Learning
+          <ArrowLeft className="h-4 w-4" strokeWidth={1.5}/> Still Learning
         </button>
         <button onClick={() => handleNext(true)}
           className="flex items-center gap-2 rounded-xl bg-[#F5A623] px-6 py-3 text-sm font-semibold text-white hover:bg-[#E09400] transition-colors">
-          Got It <ArrowRight className="h-4 w-4" strokeWidth={1.5} />
+          Got It <ArrowRight className="h-4 w-4" strokeWidth={1.5}/>
         </button>
       </div>
-
       <p className="text-center text-xs text-muted-foreground/70">
         Space to flip · ← Still Learning · → Got It · S to star/unstar
       </p>
