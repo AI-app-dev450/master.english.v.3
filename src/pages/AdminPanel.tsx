@@ -213,13 +213,22 @@ function doGet() {
 }`;
 
   // AI API Keys state (admin-only, stored under protected key)
-  const [aiAnthropicKey, setAiAnthropicKey] = useState<string>(() => {
-    try { return JSON.parse(localStorage.getItem(ADMIN_API_KEYS_KEY) || '{}').anthropic || ''; } catch { return ''; }
-  });
-  const [aiKeySaved, setAiKeySaved] = useState(false);
+  const loadAiCfg = () => { try { return JSON.parse(localStorage.getItem(ADMIN_API_KEYS_KEY) || '{}'); } catch { return {}; } };
+  const [aiGoogleKey,      setAiGoogleKey]      = useState<string>(() => loadAiCfg().google      || '');
+  const [aiGroqKey,        setAiGroqKey]         = useState<string>(() => loadAiCfg().groq        || '');
+  const [aiElevenKey,      setAiElevenKey]       = useState<string>(() => loadAiCfg().elevenlabs  || '');
+  const [aiElevenVoice,    setAiElevenVoice]     = useState<string>(() => loadAiCfg().elevenVoice || '');
+  const [aiKeySaved,       setAiKeySaved]        = useState(false);
+  const [showAiKeys,       setShowAiKeys]        = useState<Record<string,boolean>>({});
+  const toggleShowKey = (k: string) => setShowAiKeys(prev => ({ ...prev, [k]: !prev[k] }));
+
   const saveAiKeys = () => {
-    const existing = (() => { try { return JSON.parse(localStorage.getItem(ADMIN_API_KEYS_KEY) || '{}'); } catch { return {}; } })();
-    localStorage.setItem(ADMIN_API_KEYS_KEY, JSON.stringify({ ...existing, anthropic: aiAnthropicKey }));
+    localStorage.setItem(ADMIN_API_KEYS_KEY, JSON.stringify({
+      google:      aiGoogleKey.trim(),
+      groq:        aiGroqKey.trim(),
+      elevenlabs:  aiElevenKey.trim(),
+      elevenVoice: aiElevenVoice.trim(),
+    }));
     setAiKeySaved(true);
     setTimeout(() => setAiKeySaved(false), 2500);
   };
@@ -594,42 +603,173 @@ function doGet() {
       {/* ══ AI API KEYS ═════════════════════════════════════════════════════════ */}
       {tab === 'aikeys' && (
         <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} className="space-y-4">
-          <div className="bg-card rounded-xl border border-border p-5 space-y-4">
+
+          {/* Header card */}
+          <div className="rounded-2xl bg-[#1A1A2E] text-white px-5 py-4">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-[#F5A623]/10 flex items-center justify-center shrink-0">
+              <div className="h-10 w-10 rounded-xl bg-[#F5A623]/20 flex items-center justify-center shrink-0">
                 <Zap className="h-5 w-5 text-[#F5A623]" />
               </div>
               <div>
-                <h2 className="font-semibold text-foreground">AI Service Configuration</h2>
-                <p className="text-xs text-muted-foreground">These keys power the Speaking Practice (RolePlay) feature</p>
+                <h2 className="font-semibold text-white">AI Service Configuration</h2>
+                <p className="text-xs text-white/50">Powers Speaking Practice — keys never exposed to users</p>
               </div>
             </div>
-            <Field label="Anthropic API Key" note="Used for AI lesson generation and pronunciation feedback.">
-              <div className="flex gap-2">
-                <Input type="password" placeholder="sk-ant-…"
-                  value={aiAnthropicKey}
-                  onChange={e => setAiAnthropicKey(e.target.value)}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Get your key at <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-[#4A90E2] hover:underline">console.anthropic.com</a>. Users will never see this key.
-              </p>
-            </Field>
-            <button onClick={saveAiKeys}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#F5A623] text-white text-sm font-bold hover:bg-[#E09400] transition-colors">
-              {aiKeySaved ? <><CheckCircle2 className="h-4 w-4" /> Saved!</> : <><Zap className="h-4 w-4" /> Save AI Keys</>}
-            </button>
           </div>
+
+          {/* Provider cards */}
+
+          {/* ── Google Gemini ── */}
+          <div className="bg-card rounded-xl border border-border p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+                  <path d="M12 11.2L2 7l10-4 10 4-10 4.2Z" fill="#4285F4"/>
+                  <path d="M12 11.2v10L2 17V7l10 4.2Z" fill="#34A853"/>
+                  <path d="M12 11.2v10l10-4.2V7L12 11.2Z" fill="#FBBC05"/>
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-foreground">Google Gemini</p>
+                <p className="text-xs text-muted-foreground">AI conversation & lesson generation</p>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${aiGoogleKey ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
+                {aiGoogleKey ? '✓ Set' : 'Not set'}
+              </span>
+            </div>
+            <div className="relative">
+              <Input
+                type={showAiKeys['google'] ? 'text' : 'password'}
+                placeholder="AIza…"
+                value={aiGoogleKey}
+                onChange={e => setAiGoogleKey(e.target.value)}
+                className="pr-10"
+              />
+              <button onClick={() => toggleShowKey('google')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                {showAiKeys['google'] ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Free tier: 1,500 req/day · <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-[#4A90E2] hover:underline">Get key at Google AI Studio →</a>
+            </p>
+          </div>
+
+          {/* ── Groq ── */}
+          <div className="bg-card rounded-xl border border-border p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#F55036">
+                  <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2Zm0 3a7 7 0 1 1 0 14A7 7 0 0 1 12 5Zm0 2a5 5 0 1 0 0 10A5 5 0 0 0 12 7Zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/>
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-foreground">Groq</p>
+                <p className="text-xs text-muted-foreground">Ultra-fast speech-to-text (Whisper)</p>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${aiGroqKey ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
+                {aiGroqKey ? '✓ Set' : 'Not set'}
+              </span>
+            </div>
+            <div className="relative">
+              <Input
+                type={showAiKeys['groq'] ? 'text' : 'password'}
+                placeholder="gsk_…"
+                value={aiGroqKey}
+                onChange={e => setAiGroqKey(e.target.value)}
+                className="pr-10"
+              />
+              <button onClick={() => toggleShowKey('groq')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                {showAiKeys['groq'] ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Free tier: 2,000 min/month · <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-[#4A90E2] hover:underline">Get key at Groq Console →</a>
+            </p>
+          </div>
+
+          {/* ── ElevenLabs ── */}
+          <div className="bg-card rounded-xl border border-border p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="#8B5CF6">
+                  <rect x="4" y="3" width="3" height="18" rx="1.5"/>
+                  <rect x="10.5" y="6" width="3" height="15" rx="1.5"/>
+                  <rect x="17" y="9" width="3" height="12" rx="1.5"/>
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-foreground">ElevenLabs</p>
+                <p className="text-xs text-muted-foreground">Natural AI voice for sentence playback</p>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${aiElevenKey ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
+                {aiElevenKey ? '✓ Set' : 'Not set'}
+              </span>
+            </div>
+            <div className="relative">
+              <Input
+                type={showAiKeys['eleven'] ? 'text' : 'password'}
+                placeholder="ElevenLabs API key…"
+                value={aiElevenKey}
+                onChange={e => setAiElevenKey(e.target.value)}
+                className="pr-10"
+              />
+              <button onClick={() => toggleShowKey('eleven')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors text-xs">
+                {showAiKeys['eleven'] ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <Field label="Voice ID (optional)" note="Leave blank to use the default 'Sarah' voice.">
+              <Input
+                type="text"
+                placeholder="EXAVITQu4vr4xnSDxMaL  (default: Sarah)"
+                value={aiElevenVoice}
+                onChange={e => setAiElevenVoice(e.target.value)}
+                className="font-mono text-xs"
+              />
+            </Field>
+            <p className="text-xs text-muted-foreground">
+              Free tier: 10,000 chars/month · <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" className="text-[#4A90E2] hover:underline">Get key at ElevenLabs →</a>
+              {' '}· <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noopener noreferrer" className="text-[#4A90E2] hover:underline">Browse voices →</a>
+            </p>
+          </div>
+
+          {/* Status summary */}
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Provider Status</p>
+            <div className="space-y-1.5">
+              {[
+                { label: 'Google Gemini', key: aiGoogleKey,  role: 'Lesson generation & AI replies' },
+                { label: 'Groq Whisper',  key: aiGroqKey,    role: 'Speech-to-text transcription'   },
+                { label: 'ElevenLabs',    key: aiElevenKey,  role: 'AI voice playback'               },
+              ].map(p => (
+                <div key={p.label} className="flex items-center gap-2.5 text-sm">
+                  <div className={`h-2 w-2 rounded-full shrink-0 ${p.key ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`} />
+                  <span className="font-medium text-foreground w-28 shrink-0">{p.label}</span>
+                  <span className="text-muted-foreground text-xs">{p.role}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Save button */}
+          <button onClick={saveAiKeys}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#F5A623] text-white text-sm font-bold hover:bg-[#E09400] active:scale-[0.98] transition-all">
+            {aiKeySaved
+              ? <><CheckCircle2 className="h-4 w-4" /> All Keys Saved!</>
+              : <><Zap className="h-4 w-4" /> Save All AI Keys</>}
+          </button>
+
           <InfoBox>
             <Info className="h-4 w-4 shrink-0 mt-0.5"/>
             <div>
-              <strong>User privacy:</strong> API keys are stored in a protected admin-only storage key and are never exposed to users in any UI, settings, or browser developer tools visible to learners.
-              The Speaking Practice feature uses these keys transparently — users only see lesson content and scores.
+              <strong>User privacy:</strong> Keys are stored under a protected admin key (<code className="bg-blue-100 px-1 rounded text-xs">moe_admin_api_cfg</code>) and are never shown in any user-facing UI, settings pages, or RolePlay screens.
             </div>
           </InfoBox>
           <WarnBox>
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5"/>
-            <div>Keys are stored in <code className="bg-amber-100 px-1 rounded text-xs">localStorage</code> of this browser. For production, use a backend secrets manager. Never share admin credentials.</div>
+            <div>Keys are stored in this browser's <code className="bg-amber-100 px-1 rounded text-xs">localStorage</code>. For production, use a backend secrets manager. Never share admin login credentials.</div>
           </WarnBox>
         </motion.div>
       )}

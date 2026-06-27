@@ -180,11 +180,61 @@ const LESSONS: Lesson[] = [
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function getAdminKeys(): { anthropic?: string } {
+function getAdminKeys(): { google?: string; groq?: string; elevenlabs?: string; elevenVoice?: string } {
   try {
     const raw = localStorage.getItem(ADMIN_API_KEYS_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch { return {}; }
+}
+
+const DEFAULT_ELEVEN_VOICE = 'EXAVITQu4vr4xnSDxMaL'; // ElevenLabs "Sarah"
+
+/** Groq Whisper: transcribe audio blob → text */
+async function transcribeAudio(audioBlob: Blob, groqKey: string): Promise<string> {
+  const form = new FormData();
+  form.append('file', new File([audioBlob], 'audio.webm', { type: audioBlob.type }));
+  form.append('model', 'whisper-large-v3-turbo');
+  form.append('language', 'en');
+  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${groqKey}` },
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Groq STT error ${res.status}`);
+  const data = await res.json();
+  return data.text?.trim() || '';
+}
+
+/** ElevenLabs TTS: text → audio URL */
+async function textToSpeech(text: string, elevenKey: string, voiceId: string): Promise<string> {
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId || DEFAULT_ELEVEN_VOICE}`, {
+    method: 'POST',
+    headers: { 'xi-api-key': elevenKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      model_id: 'eleven_turbo_v2_5',
+      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+    }),
+  });
+  if (!res.ok) throw new Error(`ElevenLabs TTS error ${res.status}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+/** Gemini Flash: generate shadow sentences or evaluate speech */
+async function callGemini(systemPrompt: string, userPrompt: string, googleKey: string): Promise<string> {
+  const body = {
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    generationConfig: { maxOutputTokens: 1200, temperature: 0.7 },
+  };
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${googleKey}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+  );
+  if (!res.ok) throw new Error(`Gemini error ${res.status}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 }
 
 function speakText(text: string, onEnd?: () => void) {
@@ -194,7 +244,6 @@ function speakText(text: string, onEnd?: () => void) {
   utt.rate = 0.85;
   utt.pitch = 1;
   utt.lang = 'en-US';
-  // prefer a natural voice
   const voices = synth.getVoices();
   const preferred = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha')));
   if (preferred) utt.voice = preferred;
@@ -202,20 +251,12 @@ function speakText(text: string, onEnd?: () => void) {
   synth.speak(utt);
 }
 
-async function generateShadowSentences(lesson: Lesson, apiKey: string): Promise<ShadowSentence[]> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: lesson.systemPrompt,
-      messages: [{ role: 'user', content: lesson.starterPrompt }],
-    }),
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  const data = await res.json();
-  const raw = data.content?.[0]?.text || '[]';
+async function generateShadowSentences(lesson: Lesson, googleKey: string): Promise<ShadowSentence[]> {
+  const raw = await callGemini(
+    lesson.systemPrompt,
+    lesson.starterPrompt,
+    googleKey,
+  );
   const clean = raw.replace(/```json|```/g, '').trim();
   const parsed: { text: string; tip?: string }[] = JSON.parse(clean);
   return parsed.map((s, i) => ({
@@ -226,20 +267,13 @@ async function generateShadowSentences(lesson: Lesson, apiKey: string): Promise<
   }));
 }
 
-async function evaluateSpeech(original: string, transcript: string, apiKey: string): Promise<{ score: number; feedback: string }> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 200,
-      system: 'You are a precise English pronunciation evaluator. Compare the target sentence with what the user said. Return ONLY JSON with: {"score": 0-100, "feedback": "one short encouraging sentence"}. Score 100 = perfect, 80+ = great, 60+ = good, below 60 = needs practice. Be encouraging.',
-      messages: [{ role: 'user', content: `Target: "${original}"\nUser said: "${transcript}"` }],
-    }),
-  });
-  if (!res.ok) return { score: 75, feedback: 'Good effort! Keep practicing.' };
-  const data = await res.json();
-  const raw = data.content?.[0]?.text || '{}';
+async function evaluateSpeech(original: string, transcript: string, googleKey: string): Promise<{ score: number; feedback: string }> {
+  const raw = await callGemini(
+    'You are a precise English pronunciation evaluator. Compare the target sentence with what the user said. Return ONLY valid JSON with: {"score": 0-100, "feedback": "one short encouraging sentence"}. Score 100 = perfect, 80+ = great, 60+ = good, below 60 = needs practice. Be encouraging.',
+    `Target: "${original}"\nUser said: "${transcript}"`,
+    googleKey,
+  ).catch(() => '');
+  if (!raw) return { score: 75, feedback: 'Good effort! Keep practicing.' };
   const clean = raw.replace(/```json|```/g, '').trim();
   try { return JSON.parse(clean); } catch { return { score: 75, feedback: 'Good effort!' }; }
 }
@@ -270,8 +304,12 @@ export function RolePlay() {
   const ctxRef       = useRef<AudioContext | null>(null);
   const bottomRef    = useRef<HTMLDivElement>(null);
 
-  const apiKey = getAdminKeys().anthropic || '';
-  const hasApiKey = !!apiKey;
+  const keys = getAdminKeys();
+  const googleKey   = keys.google     || '';
+  const groqKey     = keys.groq       || '';
+  const elevenKey   = keys.elevenlabs || '';
+  const elevenVoice = keys.elevenVoice || DEFAULT_ELEVEN_VOICE;
+  const hasApiKey   = !!(googleKey && groqKey && elevenKey);
 
   // Auto-scroll
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [currentIdx, sentences]);
@@ -306,7 +344,7 @@ export function RolePlay() {
     setLessonDone(false);
 
     try {
-      const s = await generateShadowSentences(lesson, apiKey);
+      const s = await generateShadowSentences(lesson, googleKey);
       setSentences(s);
     } catch (e) {
       setError('Failed to load lesson. Please try again.');
@@ -317,14 +355,28 @@ export function RolePlay() {
   };
 
   // ── Playback ────────────────────────────────────────────────────────────────
+  const playTextWithVoice = useCallback(async (text: string, onEnd: () => void) => {
+    if (elevenKey) {
+      try {
+        const url = await textToSpeech(text, elevenKey, elevenVoice);
+        const audio = new Audio(url);
+        audio.onended = () => { URL.revokeObjectURL(url); onEnd(); };
+        audio.onerror = () => { URL.revokeObjectURL(url); speakText(text, onEnd); };
+        await audio.play();
+        return;
+      } catch { /* fall through to browser TTS */ }
+    }
+    speakText(text, onEnd);
+  }, [elevenKey, elevenVoice]);
+
   const playCurrent = useCallback(() => {
     if (!sentences[currentIdx]) return;
     setSentences(prev => prev.map((s, i) => i === currentIdx ? { ...s, status: 'playing' } : s));
-    speakText(sentences[currentIdx].text, () => {
+    playTextWithVoice(sentences[currentIdx].text, () => {
       setSentences(prev => prev.map((s, i) => i === currentIdx ? { ...s, status: 'recording' } : s));
       startRecording();
     });
-  }, [sentences, currentIdx]);
+  }, [sentences, currentIdx, playTextWithVoice]);
 
   // ── Recording ───────────────────────────────────────────────────────────────
   const startRecording = async () => {
@@ -392,16 +444,18 @@ export function RolePlay() {
     const sentence = sentences[currentIdx];
 
     try {
-      // Use Web Speech API transcript if available (captured in parallel during recording)
-      let transcript = webSpeechTranscript?.trim() || '';
-
-      // If no transcript from Web Speech, fall back gracefully
-      if (!transcript) {
-        transcript = sentence.text; // graceful fallback so evaluator still works
+      // Step 1: STT — prefer Groq Whisper, fall back to Web Speech transcript
+      let transcript = '';
+      if (groqKey) {
+        try {
+          transcript = await transcribeAudio(blob, groqKey);
+        } catch { /* fall through */ }
       }
+      if (!transcript) transcript = webSpeechTranscript?.trim() || sentence.text;
 
+      // Step 2: Evaluate via Gemini
       setProcessingStep('🤖 Evaluating your pronunciation…');
-      const { score, feedback } = await evaluateSpeech(sentence.text, transcript, apiKey);
+      const { score, feedback } = await evaluateSpeech(sentence.text, transcript, googleKey);
 
       setSentences(prev => prev.map((s, i) => i === currentIdx
         ? { ...s, status: 'done', userTranscript: transcript, score }
@@ -428,7 +482,7 @@ export function RolePlay() {
         // Auto-play next after short pause
         setTimeout(() => {
           setSentences(prev => prev.map((s, idx) => idx === next ? { ...s, status: 'playing' } : s));
-          speakText(sentences[next].text, () => {
+          playTextWithVoice(sentences[next].text, () => {
             setSentences(prev => prev.map((s, idx) => idx === next ? { ...s, status: 'recording' } : s));
             startRecording();
           });
@@ -465,7 +519,7 @@ export function RolePlay() {
       setRecordState('idle');
     }
     setSentences(prev => prev.map((s, i) => i === currentIdx ? { ...s, status: 'playing' } : s));
-    speakText(sentences[currentIdx].text, () => {
+    playTextWithVoice(sentences[currentIdx].text, () => {
       setSentences(prev => prev.map((s, i) => i === currentIdx ? { ...s, status: 'recording' } : s));
       startRecording();
     });
@@ -772,9 +826,10 @@ export function RolePlay() {
       {!hasApiKey && (
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-amber-800">
-            <strong>Setup required.</strong> An administrator needs to configure the AI service in the Admin Panel before speaking practice is available.
-          </p>
+          <div className="text-sm text-amber-800 space-y-0.5">
+            <p><strong>Setup required.</strong> An administrator must configure the AI services in the Admin Panel.</p>
+            <p className="text-xs text-amber-700">Needed: Google Gemini · Groq · ElevenLabs</p>
+          </div>
         </div>
       )}
 
